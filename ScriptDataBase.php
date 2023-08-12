@@ -2,7 +2,9 @@
 include 'config.php';
 
 function findBestCombination($products, $targetWeight, $currentWeight, $currentIndex, $currentCombination, &$bestCombination, &$minMcRetail) {
-    if ($currentWeight == $targetWeight && array_sum(array_column($currentCombination, 'McRetail')) < $minMcRetail) {
+    $tolerance = 0.0001; // Adjust this value as needed
+
+    if (abs($currentWeight - $targetWeight) <= $tolerance && array_sum(array_column($currentCombination, 'McRetail')) < $minMcRetail) {
         $bestCombination = $currentCombination;
         $minMcRetail = array_sum(array_column($bestCombination, 'McRetail'));
     }
@@ -25,11 +27,14 @@ function findBestCombination($products, $targetWeight, $currentWeight, $currentI
     findBestCombination($products, $targetWeight, $currentWeight, $currentIndex + 1, $currentCombination, $bestCombination, $minMcRetail);
 }
 
-// Check if the form was submitted and the searchWeight is set
 if (isset($_POST['searchWeight'])) {
-    $searchWeight = floatval($_POST['searchWeight']); // Get the user input as a float value
+    $userInput = floatval($_POST['searchWeight']);
 
-    // Fetch the products from the database
+    // Round user input to 0.25 if close
+    $roundedInput = round($userInput * 4) / 4;
+
+    $searchWeight = $roundedInput;
+
     $products = array();
     $sql = "SELECT product_id, ReturnRetail, McRetail, weight FROM products";
     $result = $conn->query($sql);
@@ -39,37 +44,44 @@ if (isset($_POST['searchWeight'])) {
             $products[] = array(
                 "product_id" => $row["product_id"],
                 "ReturnRetail" => $row["ReturnRetail"],
-                "McRetail" => floatval($row["McRetail"]), // Convert McRetail to float
+                "McRetail" => floatval($row["McRetail"]),
                 "weight" => floatval($row["weight"])
             );
         }
     }
 
-    // Sort the products array in ascending order of McRetail and descending order of weights
     usort($products, function ($a, $b) {
         $mcDiff = $a['McRetail'] - $b['McRetail'];
+
+        $tolerance = 0.0001; // Adjust this value as needed
+
+        if (abs($mcDiff) < $tolerance) {
+            $mcDiff = 0;
+        }
+
         if ($mcDiff != 0) {
             return $mcDiff;
         }
+
         return $b['weight'] - $a['weight'];
     });
 
     $bestCombination = array();
-    $minMcRetail = PHP_INT_MAX;
+    $minMcRetail = INF;
     findBestCombination($products, $searchWeight, 0, 0, array(), $bestCombination, $minMcRetail);
 
-    // Display the result
-    echo "Products that add up to $searchWeight and minimize McRetail:<br>";
-    foreach ($bestCombination as $product) {
-        echo "ReturnRetail: " . $product["ReturnRetail"] .", Making Charge: ". $product["McRetail"] .", Weight: " . $product["weight"],
-        "<br>";
+    if (empty($bestCombination)) {
+        echo "No product combination found for search weight $searchWeight";
+    } else {
+        echo "Products that add up to $searchWeight and minimize McRetail:<br>";
+        foreach ($bestCombination as $product) {
+            echo "ReturnRetail: " . $product["ReturnRetail"] .", Making Charge: ". $product["McRetail"] .", Weight: " . $product["weight"],
+            "<br>";
+        }
+        echo "Sum of McRetail: $minMcRetail";
     }
-
-    // Display the sum of McRetail
-    echo "Sum of McRetail: $minMcRetail";
 }
 
-// Close the database connection
 $conn->close();
 ?>
 
